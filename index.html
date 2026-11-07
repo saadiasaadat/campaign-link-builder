@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Campaign Link Builder</title>
+<style>
+/* Layout: form and result side by side on wide screens, stacked on phones; session history full width below. */
+:root {
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --ink: #18211e;
+  --muted: #5c6863;
+  --line: #d9e0dc;
+  --accent: #0e6656;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2f0ec;
+  --error: #b42318;
+  --error-soft: #fdeceb;
+  --warn: #8a5a00;
+  --warn-soft: #fdf3dc;
+  --code-bg: #f7f9f8;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111614; --surface: #1a201e; --ink: #e6ece9; --muted: #98a59f; --line: #2d3733;
+    --accent: #4cc2a6; --accent-ink: #0b1512; --accent-soft: #173029;
+    --error: #ff8a80; --error-soft: #3a1c1a; --warn: #f2c063; --warn-soft: #352a12; --code-bg: #141a18;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111614; --surface: #1a201e; --ink: #e6ece9; --muted: #98a59f; --line: #2d3733;
+  --accent: #4cc2a6; --accent-ink: #0b1512; --accent-soft: #173029;
+  --error: #ff8a80; --error-soft: #3a1c1a; --warn: #f2c063; --warn-soft: #352a12; --code-bg: #141a18;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 24px; }
+
+header h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 4px; letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 820px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 22px; min-width: 0; }
+.panel h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 16px; font-weight: 600; }
+
+form { display: grid; gap: 18px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+
+.field { display: grid; gap: 5px; min-width: 0; }
+label { font-weight: 600; font-size: 0.92rem; }
+label .req { color: var(--error); font-weight: 600; }
+label .opt { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
+input, select {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; width: 100%; min-width: 0;
+}
+input::placeholder { color: var(--muted); opacity: 0.75; }
+input:focus-visible, select:focus-visible, button:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
+}
+input[aria-invalid="true"] { border-color: var(--error); }
+.help { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.sent { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent); overflow-wrap: anywhere; }
+.msg { font-size: 0.84rem; padding: 6px 9px; border-radius: 6px; margin: 0; }
+.msg.error { color: var(--error); background: var(--error-soft); }
+.msg.warn { color: var(--warn); background: var(--warn-soft); }
+
+button {
+  font: inherit; font-weight: 600; cursor: pointer; border-radius: 7px; padding: 9px 16px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+button.danger-armed { color: var(--error); border-color: var(--error); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.output {
+  font-family: var(--font-mono); font-size: 0.86rem; line-height: 1.55;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px; min-height: 92px; overflow-wrap: anywhere; word-break: break-all; user-select: all;
+}
+.output .utm { color: var(--accent); font-weight: 600; }
+.output.empty { color: var(--muted); font-family: var(--font-body); font-size: 0.9rem; user-select: none; word-break: normal; }
+.output.stale { opacity: 0.5; }
+.result-stack { display: grid; gap: 12px; }
+.params { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.params li { font-family: var(--font-mono); font-size: 0.75rem; background: var(--accent-soft); color: var(--ink); padding: 3px 8px; border-radius: 999px; overflow-wrap: anywhere; }
+.result-warnings { display: grid; gap: 6px; }
+
+.history-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.history-head h2 { margin: 0; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; min-width: 620px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; background: var(--code-bg); }
+tr:last-child td { border-bottom: 0; }
+td.time { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+td.mono { font-family: var(--font-mono); font-size: 0.8rem; }
+td.link { font-family: var(--font-mono); font-size: 0.78rem; word-break: break-all; min-width: 280px; }
+.empty-history { color: var(--muted); padding: 18px; text-align: center; margin: 0; }
+
+.csv-box { display: grid; gap: 8px; margin-top: 14px; }
+textarea { font-family: var(--font-mono); font-size: 0.78rem; width: 100%; min-height: 140px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--code-bg); color: var(--ink); resize: vertical; }
+.status { font-size: 0.84rem; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Campaign Link Builder</h1>
+    <p>Add UTM tracking to a destination URL, copy it into your campaign, and keep a record of every link you build.</p>
+  </header>
+
+  <div class="layout">
+    <section class="panel" aria-labelledby="form-title">
+      <h2 id="form-title">Link details</h2>
+      <form id="builder" novalidate>
+        <div class="field">
+          <label for="url">Destination URL <span class="req" aria-hidden="true">*</span></label>
+          <input id="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.example.com/jackets" aria-describedby="url-help url-msg">
+          <p class="help" id="url-help">The page people land on. Must start with https://</p>
+          <div id="url-msg" aria-live="polite"></div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="source">Source</label>
+            <select id="source" aria-describedby="source-help">
+              <option value="email" selected>email</option>
+              <option value="sms">sms</option>
+              <option value="paid_social">paid_social</option>
+              <option value="organic_social">organic_social</option>
+              <option value="partner">partner</option>
+            </select>
+            <p class="help" id="source-help">Where the click comes from (utm_source).</p>
+          </div>
+          <div class="field">
+            <label for="medium">Medium</label>
+            <select id="medium" aria-describedby="medium-help">
+              <option value="crm" selected>crm</option>
+              <option value="paid">paid</option>
+              <option value="referral">referral</option>
+              <option value="push">push</option>
+            </select>
+            <p class="help" id="medium-help">The type of channel (utm_medium).</p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="campaign">Campaign name <span class="req" aria-hidden="true">*</span></label>
+          <input id="campaign" type="text" autocomplete="off" placeholder="Spring Jackets 2026" aria-describedby="campaign-help campaign-sent campaign-msg">
+          <p class="help" id="campaign-help">Converted to lowercase with underscores. Keep it to 40 characters or fewer.</p>
+          <div class="sent" id="campaign-sent"></div>
+          <div id="campaign-msg" aria-live="polite"></div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="content">Content <span class="opt">(optional)</span></label>
+            <input id="content" type="text" autocomplete="off" placeholder="hero_button" aria-describedby="content-help content-sent">
+            <p class="help" id="content-help">Which link or button was clicked, e.g. hero_button, footer_link.</p>
+            <div class="sent" id="content-sent"></div>
+          </div>
+          <div class="field">
+            <label for="term">Term <span class="opt">(optional)</span></label>
+            <input id="term" type="text" autocomplete="off" placeholder="winter_coats" aria-describedby="term-help term-sent">
+            <p class="help" id="term-help">Keyword or audience segment, mostly for paid search.</p>
+            <div class="sent" id="term-sent"></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="primary" id="build">Build link</button>
+          <button type="button" id="reset">Clear form</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="result-title">
+      <h2 id="result-title">Your tracked link</h2>
+      <div class="result-stack">
+        <div class="output empty" id="output" aria-live="polite">Fill in the destination URL and campaign name, then press Build link.</div>
+        <ul class="params" id="params" hidden></ul>
+        <div class="result-warnings" id="result-warnings"></div>
+        <div class="actions">
+          <button type="button" class="primary" id="copy" disabled>Copy link</button>
+          <span class="status" id="copy-status" aria-live="polite"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="history-title">
+    <div class="history-head">
+      <h2 id="history-title">History</h2>
+      <div class="actions">
+        <button type="button" id="export">Export CSV</button>
+        <button type="button" id="clear">Clear history</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Time</th><th scope="col">Campaign</th><th scope="col">Source</th><th scope="col">Final link</th></tr></thead>
+        <tbody id="history-body"></tbody>
+      </table>
+      <p class="empty-history" id="history-empty">No links yet. Links you build appear here and stay after a page refresh.</p>
+    </div>
+    <div class="csv-box" id="csv-box" hidden>
+      <p class="help">If no download started, copy this CSV and paste it into a spreadsheet or a .csv file.</p>
+      <textarea id="csv-text" readonly aria-label="CSV export"></textarea>
+      <div class="actions">
+        <button type="button" id="copy-csv">Copy CSV</button>
+        <button type="button" id="close-csv">Close</button>
+        <span class="status" id="csv-status" aria-live="polite"></span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var STORAGE_KEY = 'campaign-link-builder-history-v1';
+  var MAX_CAMPAIGN = 40;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var els = {
+    form: $('builder'), url: $('url'), source: $('source'), medium: $('medium'),
+    campaign: $('campaign'), content: $('content'), term: $('term'),
+    output: $('output'), params: $('params'), warnings: $('result-warnings'),
+    copy: $('copy'), copyStatus: $('copy-status'),
+    historyBody: $('history-body'), historyEmpty: $('history-empty'),
+    exportBtn: $('export'), clearBtn: $('clear'),
+    csvBox: $('csv-box'), csvText: $('csv-text'), csvStatus: $('csv-status')
+  };
+
+  var currentLink = '';
+  var history = loadHistory();
+
+  /* ---------- Value cleaning ---------- */
+  // Lowercase, strip accents, turn spaces and any other character outside a-z 0-9 . - into "_".
+  function toUtmValue(v) {
+    return String(v || '')
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9.\-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  /* ---------- Validation ---------- */
+  function checkUrl(raw) {
+    var url = raw.trim();
+    if (!url) return 'Enter a destination URL.';
+    if (!/^https:\/\//i.test(url)) return 'The URL must start with https://';
+    if (/\s/.test(url)) return 'The URL contains spaces. Remove them and try again.';
+    try {
+      var u = new URL(url);
+      if (!u.hostname || u.hostname.indexOf('.') === -1) throw new Error();
+    } catch (e) { return 'This doesn\u2019t look like a complete web address, e.g. https://www.example.com/page'; }
+    return '';
+  }
+  function hasUtm(raw) { return /[?&]utm_[a-z_]*=/i.test(raw); }
+
+  /* ---------- Link building ---------- */
+  function buildParts(rawUrl, values) {
+    var base = rawUrl.trim(), hash = '';
+    var h = base.indexOf('#');
+    if (h > -1) { hash = base.slice(h); base = base.slice(0, h); }
+    var pairs = [['utm_source', values.source], ['utm_medium', values.medium], ['utm_campaign', values.campaign]];
+    if (values.content) pairs.push(['utm_content', values.content]);
+    if (values.term) pairs.push(['utm_term', values.term]);
+    var query = pairs.map(function (p) { return p[0] + '=' + encodeURIComponent(p[1]); }).join('&');
+    var sep;
+    if (base.indexOf('?') === -1) sep = '?';
+    else sep = /[?&]$/.test(base) ? '' : '&';
+    return { base: base, sep: sep, query: query, hash: hash, pairs: pairs, full: base + sep + query + hash };
+  }
+
+  /* ---------- Field messages ---------- */
+  function setMsg(id, text, kind) {
+    var box = $(id);
+    box.innerHTML = '';
+    if (!text) return;
+    var p = document.createElement('p');
+    p.className = 'msg ' + kind;
+    p.textContent = text;
+    box.appendChild(p);
+  }
+  function setInvalid(input, bad) { input.setAttribute('aria-invalid', bad ? 'true' : 'false'); }
+
+  function showSent(inputEl, sentId, showCount) {
+    var raw = inputEl.value, clean = toUtmValue(raw), box = $(sentId);
+    if (!raw.trim()) { box.textContent = ''; return; }
+    var text = 'Sent as: ' + (clean || '(nothing usable)');
+    if (showCount) text += '  \u00b7  ' + clean.length + '/' + MAX_CAMPAIGN;
+    box.textContent = text;
+  }
+
+  function liveWarnings() {
+    // URL: utm warning shown live; errors only after a build attempt or once fixed
+    var urlErr = checkUrl(els.url.value);
+    if (els.url.getAttribute('aria-invalid') === 'true') {
+      setMsg('url-msg', urlErr, 'error'); setInvalid(els.url, !!urlErr);
+      if (!urlErr && hasUtm(els.url.value)) setMsg('url-msg', 'This URL already has utm_ parameters. Adding new ones will duplicate them.', 'warn');
+    } else {
+      setMsg('url-msg', hasUtm(els.url.value) ? 'This URL already has utm_ parameters. Adding new ones will duplicate them.' : '', 'warn');
+    }
+
+    var camp = toUtmValue(els.campaign.value);
+    if (els.campaign.getAttribute('aria-invalid') === 'true' && !camp) {
+      setMsg('campaign-msg', 'Enter a campaign name with at least one letter or number.', 'error');
+    } else {
+      setInvalid(els.campaign, false);
+      setMsg('campaign-msg', camp.length > MAX_CAMPAIGN ? 'Campaign name is ' + camp.length + ' characters. Shorter names (40 or fewer) are easier to read in reports.' : '', 'warn');
+    }
+
+    showSent(els.campaign, 'campaign-sent', true);
+    showSent(els.content, 'content-sent', false);
+    showSent(els.term, 'term-sent', false);
+  }
+
+  /* ---------- Output ---------- */
+  function renderEmpty(text) {
+    currentLink = '';
+    els.output.className = 'output empty';
+    els.output.textContent = text;
+    els.params.hidden = true;
+    els.warnings.innerHTML = '';
+    els.copy.disabled = true;
+    els.copyStatus.textContent = '';
+  }
+
+  function renderLink(parts, warnings) {
+    currentLink = parts.full;
+    els.output.className = 'output';
+    els.output.innerHTML = '';
+    var add = function (text, cls) {
+      var s = document.createElement('span');
+      if (cls) s.className = cls;
+      s.textContent = text;
+      els.output.appendChild(s);
+    };
+    add(parts.base);
+    add(parts.sep + parts.query, 'utm');
+    if (parts.hash) add(parts.hash);
+
+    els.params.innerHTML = '';
+    parts.pairs.forEach(function (p) {
+      var li = document.createElement('li');
+      li.textContent = p[0] + ' = ' + p[1];
+      els.params.appendChild(li);
+    });
+    els.params.hidden = false;
+
+    els.warnings.innerHTML = '';
+    warnings.forEach(function (w) {
+      var p = document.createElement('p');
+      p.className = 'msg warn';
+      p.textContent = w;
+      els.warnings.appendChild(p);
+    });
+    els.copy.disabled = false;
+    els.copy.textContent = 'Copy link';
+    els.copyStatus.textContent = '';
+  }
+
+  function markStale() {
+    if (!currentLink) return;
+    els.output.classList.add('stale');
+    els.copy.disabled = true;
+    els.copyStatus.textContent = 'Fields changed. Press Build link to update.';
+  }
+
+  /* ---------- Build ---------- */
+  els.form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var urlErr = checkUrl(els.url.value);
+    var camp = toUtmValue(els.campaign.value);
+    var campErr = camp ? '' : 'Enter a campaign name with at least one letter or number.';
+
+    setInvalid(els.url, !!urlErr);
+    setInvalid(els.campaign, !!campErr);
+    liveWarnings();
+
+    if (urlErr || campErr) {
+      renderEmpty('Fix the highlighted fields to build your link.');
+      (urlErr ? els.url : els.campaign).focus();
+      return;
+    }
+
+    // Normalise the visible fields so what the user sees matches what is sent
+    els.campaign.value = camp;
+    els.content.value = toUtmValue(els.content.value);
+    els.term.value = toUtmValue(els.term.value);
+    liveWarnings();
+
+    var values = {
+      source: toUtmValue(els.source.value),
+      medium: toUtmValue(els.medium.value),
+      campaign: camp,
+      content: els.content.value,
+      term: els.term.value
+    };
+    var parts = buildParts(els.url.value, values);
+
+    var warnings = [];
+    if (hasUtm(els.url.value)) warnings.push('The destination URL already had utm_ parameters, so this link now contains duplicates. Remove the old ones from the URL if you don\u2019t want them.');
+    if (camp.length > MAX_CAMPAIGN) warnings.push('Campaign name is ' + camp.length + ' characters, over the 40-character guideline.');
+
+    renderLink(parts, warnings);
+    addHistory({
+      time: new Date().toISOString(),
+      campaign: values.campaign, source: values.source, medium: values.medium,
+      content: values.content, term: values.term, link: parts.full
+    });
+  });
+
+  ['url', 'campaign', 'content', 'term'].forEach(function (k) {
+    els[k].addEventListener('input', function () { liveWarnings(); markStale(); });
+  });
+  ['source', 'medium'].forEach(function (k) { els[k].addEventListener('change', markStale); });
+  ['campaign', 'content', 'term'].forEach(function (k) {
+    els[k].addEventListener('blur', function () {
+      if (els[k].value.trim()) { els[k].value = toUtmValue(els[k].value); liveWarnings(); }
+    });
+  });
+
+  $('reset').addEventListener('click', function () {
+    els.form.reset();
+    els.source.value = 'email';
+    els.medium.value = 'crm';
+    setInvalid(els.url, false); setInvalid(els.campaign, false);
+    liveWarnings();
+    renderEmpty('Fill in the destination URL and campaign name, then press Build link.');
+    els.url.focus();
+  });
+
+  /* ---------- Copy ---------- */
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+  function selectEl(el) {
+    var r = document.createRange(); r.selectNodeContents(el);
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  function copyText(text, onOk, onFail) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onOk, function () { fallbackCopy(text) ? onOk() : onFail(); });
+    } else {
+      fallbackCopy(text) ? onOk() : onFail();
+    }
+  }
+
+  var copyTimer = null;
+  els.copy.addEventListener('click', function () {
+    if (!currentLink) return;
+    copyText(currentLink, function () {
+      els.copy.textContent = 'Copied';
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(function () { els.copy.textContent = 'Copy link'; }, 2000);
+    }, function () {
+      selectEl(els.output);
+      els.copyStatus.textContent = 'Your browser blocked copying. The link is selected; press Ctrl+C or \u2318C.';
+    });
+  });
+
+  /* ---------- History ---------- */
+  function loadHistory() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      var data = raw ? JSON.parse(raw) : [];
+      return Array.isArray(data) ? data : [];
+    } catch (e) { return []; }
+  }
+  function saveHistory() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch (e) { /* storage unavailable: history lasts until refresh */ }
+  }
+  function addHistory(entry) {
+    if (history.length && history[0].link === entry.link) {
+      history[0].time = entry.time; // same link built twice in a row: refresh its time, no duplicate row
+    } else {
+      history.unshift(entry);
+      if (history.length > 500) history.length = 500;
+    }
+    saveHistory();
+    renderHistory();
+  }
+  function fmtTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' +
+           d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+  function renderHistory() {
+    els.historyBody.innerHTML = '';
+    history.forEach(function (h) {
+      var tr = document.createElement('tr');
+      [[fmtTime(h.time), 'time'], [h.campaign, 'mono'], [h.source, 'mono'], [h.link, 'link']].forEach(function (c) {
+        var td = document.createElement('td');
+        td.className = c[1];
+        td.textContent = c[0];
+        tr.appendChild(td);
+      });
+      els.historyBody.appendChild(tr);
+    });
+    var empty = history.length === 0;
+    els.historyEmpty.hidden = !empty;
+    els.exportBtn.disabled = empty;
+    els.clearBtn.disabled = empty;
+    if (empty) els.csvBox.hidden = true;
+  }
+
+  /* ---------- CSV export ---------- */
+  function csvCell(v) {
+    var s = String(v == null ? '' : v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function csvTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function buildCsv() {
+    var rows = [['time', 'campaign', 'source', 'medium', 'content', 'term', 'final_link']];
+    history.forEach(function (h) { rows.push([csvTime(h.time), h.campaign, h.source, h.medium, h.content, h.term, h.link]); });
+    return rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+  }
+  els.exportBtn.addEventListener('click', function () {
+    var csv = buildCsv();
+    // Try a normal file download (works when the HTML file is opened directly in a browser)
+    try {
+      var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      var d = new Date();
+      a.download = 'campaign-links-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    } catch (e) { /* download blocked: the text box below still has the CSV */ }
+    els.csvText.value = csv;
+    els.csvBox.hidden = false;
+    els.csvStatus.textContent = '';
+  });
+  $('copy-csv').addEventListener('click', function () {
+    copyText(els.csvText.value, function () {
+      els.csvStatus.textContent = 'Copied';
+      setTimeout(function () { els.csvStatus.textContent = ''; }, 2000);
+    }, function () {
+      els.csvText.focus(); els.csvText.select();
+      els.csvStatus.textContent = 'Selected. Press Ctrl+C or \u2318C to copy.';
+    });
+  });
+  $('close-csv').addEventListener('click', function () { els.csvBox.hidden = true; });
+
+  /* ---------- Clear history (two-step confirm) ---------- */
+  var clearArmed = false, clearTimer = null;
+  function disarm() {
+    clearArmed = false;
+    els.clearBtn.textContent = 'Clear history';
+    els.clearBtn.classList.remove('danger-armed');
+  }
+  els.clearBtn.addEventListener('click', function () {
+    if (!clearArmed) {
+      clearArmed = true;
+      els.clearBtn.textContent = 'Click again to clear all';
+      els.clearBtn.classList.add('danger-armed');
+      clearTimeout(clearTimer);
+      clearTimer = setTimeout(disarm, 4000);
+      return;
+    }
+    clearTimeout(clearTimer);
+    disarm();
+    history = [];
+    saveHistory();
+    renderHistory();
+  });
+
+  renderHistory();
+  liveWarnings();
+})();
+</script>
+</body>
+</html>
